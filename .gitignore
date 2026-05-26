@@ -1,0 +1,28 @@
+# Build
+/_build/
+/cover/
+/deps/
+/doc/
+
+# Runtime
+.env
+*.beam
+*.ez
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Release
+/voice_capture_bot-*.tar.gz
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
