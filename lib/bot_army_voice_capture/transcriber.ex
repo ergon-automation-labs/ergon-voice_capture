@@ -188,9 +188,7 @@ defmodule BotArmyVoiceCapture.Transcriber do
             {:args, args},
             :binary,
             :exit_status,
-            {:line, 4096},
-            :use_stdio,
-            :stderr_to_std_err
+            {:line, 4096}
           ])
 
         {:ok, port}
