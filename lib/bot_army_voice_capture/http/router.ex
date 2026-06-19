@@ -1,4 +1,6 @@
 defmodule BotArmyVoiceCapture.Http.Router do
+  @dialyzer {:nowarn_function, [handle_json_request: 2]}
+
   @moduledoc """
   HTTP surface for STT transcription requests.
 

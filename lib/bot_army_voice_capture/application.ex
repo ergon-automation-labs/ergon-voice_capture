@@ -20,6 +20,8 @@ defmodule BotArmyVoiceCapture.Application do
   use Application
 
   @env Mix.env()
+  @dialyzer {:nowarn_function,
+             [maybe_add_publisher: 1, maybe_add_consumer: 1, maybe_add_pulse_publisher: 1]}
 
   @impl true
   def start(_type, _args) do
@@ -48,23 +50,29 @@ defmodule BotArmyVoiceCapture.Application do
   end
 
   defp maybe_add_publisher(children) do
-    case @env do
-      :test -> children
-      _ -> [{BotArmyVoiceCapture.Publisher, []} | children]
+    # dialyzer:ignore
+    if @env == :test do
+      children
+    else
+      [{BotArmyVoiceCapture.Publisher, []} | children]
     end
   end
 
   defp maybe_add_consumer(children) do
-    case @env do
-      :test -> children
-      _ -> [{BotArmyVoiceCapture.NATS.Consumer, []} | children]
+    # dialyzer:ignore
+    if @env == :test do
+      children
+    else
+      [{BotArmyVoiceCapture.NATS.Consumer, []} | children]
     end
   end
 
   defp maybe_add_pulse_publisher(children) do
-    case @env do
-      :test -> children
-      _ -> [{BotArmyVoiceCapture.PulsePublisher, []} | children]
+    # dialyzer:ignore
+    if @env == :test do
+      children
+    else
+      [{BotArmyVoiceCapture.PulsePublisher, []} | children]
     end
   end
 

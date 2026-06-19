@@ -1,4 +1,6 @@
 defmodule BotArmyVoiceCapture.Transcriber do
+  @dialyzer {:nowarn_function, [open_python_port: 1]}
+
   @moduledoc """
   GenServer managing a Python Whisper inference process via Erlang Port.
 
