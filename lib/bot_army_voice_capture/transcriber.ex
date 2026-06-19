@@ -169,6 +169,7 @@ defmodule BotArmyVoiceCapture.Transcriber do
   # Private
   # ===========================================================================
 
+  @spec open_python_port(String.t()) :: {:ok, port()} | {:error, :python_not_found}
   defp open_python_port(model) do
     priv_dir = :code.priv_dir(:bot_army_voice_capture)
     script = Path.join([priv_dir, "python", "whisper_server.py"])

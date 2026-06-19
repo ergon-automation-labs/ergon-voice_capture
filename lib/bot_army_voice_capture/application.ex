@@ -40,6 +40,7 @@ defmodule BotArmyVoiceCapture.Application do
     Supervisor.start_link(children, opts)
   end
 
+  @dialyzer {:no_match, [{:maybe_add_transcriber, 1}]}
   defp maybe_add_transcriber(children) do
     # Skip Transcriber in test unless explicitly enabled (requires Python/MLX)
     if @env == :test and System.get_env("VOICE_CAPTURE_ENABLE_WHISPER") not in ~w(1 true yes) do
