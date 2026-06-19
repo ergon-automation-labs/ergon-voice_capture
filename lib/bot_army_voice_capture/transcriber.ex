@@ -187,8 +187,7 @@ defmodule BotArmyVoiceCapture.Transcriber do
           Port.open({:spawn_executable, python}, [
             {:args, args},
             :binary,
-            :exit_status,
-            {:line, 4096}
+            :exit_status
           ])
 
         {:ok, port}
