@@ -66,6 +66,7 @@ defmodule BotArmyVoiceCapture.Transcriber do
   end
 
   @impl true
+  @dialyzer {:no_match, [{:handle_continue, 2}]}
   def handle_continue(:open_port, state) do
     case open_python_port(state.model) do
       {:ok, port} ->
