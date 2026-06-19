@@ -48,26 +48,23 @@ defmodule BotArmyVoiceCapture.Application do
   end
 
   defp maybe_add_publisher(children) do
-    if @env == :test do
-      children
-    else
-      [{BotArmyVoiceCapture.Publisher, []} | children]
+    case @env do
+      :test -> children
+      _ -> [{BotArmyVoiceCapture.Publisher, []} | children]
     end
   end
 
   defp maybe_add_consumer(children) do
-    if @env == :test do
-      children
-    else
-      [{BotArmyVoiceCapture.NATS.Consumer, []} | children]
+    case @env do
+      :test -> children
+      _ -> [{BotArmyVoiceCapture.NATS.Consumer, []} | children]
     end
   end
 
   defp maybe_add_pulse_publisher(children) do
-    if @env == :test do
-      children
-    else
-      [{BotArmyVoiceCapture.PulsePublisher, []} | children]
+    case @env do
+      :test -> children
+      _ -> [{BotArmyVoiceCapture.PulsePublisher, []} | children]
     end
   end
 

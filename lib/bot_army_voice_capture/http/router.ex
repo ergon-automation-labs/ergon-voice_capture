@@ -64,7 +64,7 @@ defmodule BotArmyVoiceCapture.Http.Router do
   end
 
   defp handle_json_request(conn, source) do
-    body = conn.body_params || %{}
+    body = if is_map(conn.body_params), do: conn.body_params, else: %{}
 
     case body do
       %{"audio_base64" => b64} when is_binary(b64) ->

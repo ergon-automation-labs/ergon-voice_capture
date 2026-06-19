@@ -172,22 +172,24 @@ defmodule BotArmyVoiceCapture.Transcriber do
     script = Path.join([priv_dir, "python", "whisper_server.py"])
     python = System.find_executable("python3") || System.find_executable("python")
 
-    if is_nil(python) do
-      {:error, :python_not_found}
-    else
-      args = [script, "--model", model]
+    cond do
+      is_nil(python) ->
+        {:error, :python_not_found}
 
-      port =
-        Port.open({:spawn_executable, python}, [
-          {:args, args},
-          :binary,
-          :exit_status,
-          {:line, 4096},
-          :use_stdio,
-          :stderr_to_std_err
-        ])
+      true ->
+        args = [script, "--model", model]
 
-      {:ok, port}
+        port =
+          Port.open({:spawn_executable, python}, [
+            {:args, args},
+            :binary,
+            :exit_status,
+            {:line, 4096},
+            :use_stdio,
+            :stderr_to_std_err
+          ])
+
+        {:ok, port}
     end
   end
 
