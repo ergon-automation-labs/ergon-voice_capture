@@ -23,25 +23,23 @@ import io
 import tempfile
 import os
 
-MODEL_NAME = os.environ.get("WHISPER_MODEL", "mlx-community/whisper-medium.en-mlx")
+MODEL_NAME = os.environ.get("WHISPER_MODEL", "medium.en")
 _model = None
 
 
 def load_model():
     global _model
-    import mlx_whisper
-    _model = MODEL_NAME
-    return _model
+    from faster_whisper import WhisperModel
+    _model = WhisperModel(MODEL_NAME, device="cpu", compute_type="auto")
+    return MODEL_NAME
 
 
 def transcribe_file(audio_path):
     """Transcribe a WAV file on disk."""
-    import mlx_whisper
-    result = mlx_whisper.transcribe(
+    result = _model.transcribe(
         audio_path,
-        path_or_hf_repo=MODEL_NAME,
         language="en",
-        word_timestamps=True,
+        word_level_timestamps=True,
     )
     return format_result(result, audio_path=audio_path)
 
@@ -80,18 +78,36 @@ def transcribe_pcm(pcm_data, sample_rate):
 
 
 def format_result(result, audio_path=None):
-    """Format mlx_whisper result into our response schema."""
-    text = result.get("text", "").strip()
-    language = result.get("language", "en")
+    """Format faster_whisper result into our response schema."""
+    # result is a tuple of (transcript_text, info_dict) from faster-whisper
+    text = ""
+    language = "en"
 
     segments = []
-    for seg in result.get("segments", []):
-        segments.append({
-            "start_ms": int(seg.get("start", 0) * 1000),
-            "end_ms": int(seg.get("end", 0) * 1000),
-            "text": seg.get("text", "").strip(),
-            "confidence": seg.get("avg_logprob", 0.0),
-        })
+    if isinstance(result, tuple):
+        # Faster-whisper returns generator and info
+        transcript_segments, info = result
+        text = " ".join(seg.text for seg in transcript_segments).strip()
+        language = info.language
+
+        for seg in transcript_segments:
+            segments.append({
+                "start_ms": int(seg.start * 1000),
+                "end_ms": int(seg.end * 1000),
+                "text": seg.text.strip(),
+                "confidence": seg.confidence,
+            })
+    else:
+        # Fallback for unexpected format
+        text = result.get("text", "").strip()
+        language = result.get("language", "en")
+        for seg in result.get("segments", []):
+            segments.append({
+                "start_ms": int(seg.get("start", 0) * 1000),
+                "end_ms": int(seg.get("end", 0) * 1000),
+                "text": seg.get("text", "").strip(),
+                "confidence": seg.get("confidence", 0.0),
+            })
 
     # Estimate duration from segments
     duration_ms = 0
