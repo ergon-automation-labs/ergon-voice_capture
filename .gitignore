@@ -1,28 +1,26 @@
-# Build
 /_build/
 /cover/
 /deps/
+/.cache/
 /doc/
-
-# Runtime
+erl_crash.dump
+mix.lock
 .env
-*.beam
-*.ez
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-
-# Release
-/voice_capture_bot-*.tar.gz
-
-# IDE
-.vscode/
+.env.local
+.env.*.local
 .idea/
+.vscode/
+*.sublime-workspace
 *.swp
 *.swo
-
-# OS
+*~
 .DS_Store
-Thumbs.db
+.excoveralls.json
+.elixir_ls/
+*.beam
+
+# Build artifacts and crash dumps
+*.crash
+*.tar.gz
+*.tar.xz
+_build_cursor_test/
