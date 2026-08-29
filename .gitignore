@@ -24,3 +24,6 @@ mix.lock
 *.tar.gz
 *.tar.xz
 _build_cursor_test/
+
+# runtime validation state marker (never commit)
+.push-validated
