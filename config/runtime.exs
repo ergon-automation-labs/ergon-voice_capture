@@ -1,7 +1,7 @@
 import Config
 
 nats_host = System.get_env("NATS_HOST") || "localhost"
-nats_port = String.to_integer(System.get_env("NATS_PORT") || "4223")
+nats_port = String.to_integer(System.get_env("NATS_PORT") || "4222")
 
 config :bot_army_library_runtime, :nats,
   servers: [{nats_host, nats_port}],
