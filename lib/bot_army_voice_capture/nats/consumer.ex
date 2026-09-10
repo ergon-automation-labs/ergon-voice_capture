@@ -6,8 +6,8 @@ defmodule BotArmyVoiceCapture.NATS.Consumer do
   Bot Army consumers to request transcription services.
 
   All request/reply handlers return responses using Reply helpers:
-  - BotArmyRuntime.NATS.Reply.ok(data) for success
-  - BotArmyRuntime.NATS.Reply.error(message, code) for errors
+  - BotArmyLibraryRuntime.NATS.Reply.ok(data) for success
+  - BotArmyLibraryRuntime.NATS.Reply.error(message, code) for errors
   """
 
   use GenServer
@@ -49,9 +49,9 @@ defmodule BotArmyVoiceCapture.NATS.Consumer do
 
   @impl true
   def handle_continue(:connect, state) do
-    case GenServer.call(BotArmyRuntime.NATS.Connection, :get_connection, 5_000) do
+    case GenServer.call(BotArmyLibraryRuntime.NATS.Connection, :get_connection, 5_000) do
       {:ok, conn} ->
-        BotArmyRuntime.NATS.Connection.subscribe_to_status()
+        BotArmyLibraryRuntime.NATS.Connection.subscribe_to_status()
         Logger.info("[Consumer] Connected to NATS, subscribing to topics")
 
         subscriptions =
@@ -71,7 +71,7 @@ defmodule BotArmyVoiceCapture.NATS.Consumer do
           end)
           |> Enum.filter(&(not is_nil(&1)))
 
-        BotArmyRuntime.Registry.register("voice_capture", @subjects, @version)
+        BotArmyLibraryRuntime.Registry.register("voice_capture", @subjects, @version)
         send(self(), :registry_heartbeat)
 
         {:noreply, %{state | subscriptions: subscriptions, conn: conn}}
@@ -85,7 +85,7 @@ defmodule BotArmyVoiceCapture.NATS.Consumer do
 
   @impl true
   def handle_info({:msg, msg}, state) do
-    BotArmyRuntime.Tracing.with_consumer_span(msg.topic, Map.get(msg, :headers, []), fn ->
+    BotArmyLibraryRuntime.Tracing.with_consumer_span(msg.topic, Map.get(msg, :headers, []), fn ->
       Logger.debug("[Consumer] Received NATS message on subject: #{msg.topic}")
 
       if msg.reply_to do
@@ -97,7 +97,7 @@ defmodule BotArmyVoiceCapture.NATS.Consumer do
             Logger.debug("[Consumer] Unknown request/reply subject: #{msg.topic}")
         end
       else
-        case BotArmyCore.NATS.Decoder.decode(msg.body) do
+        case BotArmyLibraryCore.NATS.Decoder.decode(msg.body) do
           {:ok, decoded} ->
             route_message(decoded, msg.topic)
 
@@ -115,7 +115,7 @@ defmodule BotArmyVoiceCapture.NATS.Consumer do
   @impl true
   def handle_info(:registry_heartbeat, state) do
     if state.subscriptions != [] do
-      BotArmyRuntime.Registry.register("voice_capture", @subjects, @version)
+      BotArmyLibraryRuntime.Registry.register("voice_capture", @subjects, @version)
     end
 
     Process.send_after(self(), :registry_heartbeat, @registry_heartbeat_ms)
@@ -150,7 +150,7 @@ defmodule BotArmyVoiceCapture.NATS.Consumer do
   # ============================================================================
 
   defp handle_transcribe(msg, state) do
-    case BotArmyCore.NATS.Decoder.decode(msg.body) do
+    case BotArmyLibraryCore.NATS.Decoder.decode(msg.body) do
       {:ok, %{"audio_base64" => b64} = payload} ->
         _format = Map.get(payload, "format", "pcm")
         sample_rate = Map.get(payload, "sample_rate", 16_000)
@@ -162,12 +162,12 @@ defmodule BotArmyVoiceCapture.NATS.Consumer do
               {:ok, result} ->
                 transcription = Transcription.from_whisper_result(result, source)
                 Publisher.publish_transcription(transcription)
-                reply = BotArmyRuntime.NATS.Reply.ok(Transcription.to_map(transcription))
+                reply = BotArmyLibraryRuntime.NATS.Reply.ok(Transcription.to_map(transcription))
                 Gnat.pub(state.conn, msg.reply_to, reply)
 
               {:error, error} ->
                 reply =
-                  BotArmyRuntime.NATS.Reply.error(
+                  BotArmyLibraryRuntime.NATS.Reply.error(
                     "Transcription failed: #{inspect(error)}",
                     :transcription_failed
                   )
@@ -176,7 +176,7 @@ defmodule BotArmyVoiceCapture.NATS.Consumer do
             end
 
           :error ->
-            reply = BotArmyRuntime.NATS.Reply.error("Invalid base64 audio data", :invalid_base64)
+            reply = BotArmyLibraryRuntime.NATS.Reply.error("Invalid base64 audio data", :invalid_base64)
             Gnat.pub(state.conn, msg.reply_to, reply)
         end
 
@@ -187,12 +187,12 @@ defmodule BotArmyVoiceCapture.NATS.Consumer do
           {:ok, result} ->
             transcription = Transcription.from_whisper_result(result, source)
             Publisher.publish_transcription(transcription)
-            reply = BotArmyRuntime.NATS.Reply.ok(Transcription.to_map(transcription))
+            reply = BotArmyLibraryRuntime.NATS.Reply.ok(Transcription.to_map(transcription))
             Gnat.pub(state.conn, msg.reply_to, reply)
 
           {:error, error} ->
             reply =
-              BotArmyRuntime.NATS.Reply.error(
+              BotArmyLibraryRuntime.NATS.Reply.error(
                 "Transcription failed: #{inspect(error)}",
                 :transcription_failed
               )
@@ -202,13 +202,13 @@ defmodule BotArmyVoiceCapture.NATS.Consumer do
 
       {:ok, _} ->
         reply =
-          BotArmyRuntime.NATS.Reply.error("Missing audio_base64 or audio_path", :missing_audio)
+          BotArmyLibraryRuntime.NATS.Reply.error("Missing audio_base64 or audio_path", :missing_audio)
 
         Gnat.pub(state.conn, msg.reply_to, reply)
 
       {:error, reason} ->
         reply =
-          BotArmyRuntime.NATS.Reply.error(
+          BotArmyLibraryRuntime.NATS.Reply.error(
             "Failed to decode request: #{inspect(reason)}",
             :decode_error
           )

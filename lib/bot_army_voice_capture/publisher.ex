@@ -47,7 +47,7 @@ defmodule BotArmyVoiceCapture.Publisher do
   end
 
   defp publish(subject, payload) do
-    case BotArmyRuntime.NATS.Publisher.publish(subject, payload) do
+    case BotArmyLibraryRuntime.NATS.Publisher.publish(subject, payload) do
       {:ok, _} ->
         Logger.debug("[Publisher] Published to #{subject}")
 
