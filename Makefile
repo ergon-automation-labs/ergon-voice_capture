@@ -1,17 +1,11 @@
 SCRIPTS_DIRECTORY ?= $(abspath $(CURDIR)/../scripts)
-# Toolchain locations are machine-specific, so they are resolved per machine by
-# the versioned resolver in the shared scripts dir (scripts/bot-helpers/portable.mk).
-SCRIPTS_DIRECTORY ?= $(abspath $(CURDIR)/../scripts)
-PORTABLE_MK := $(SCRIPTS_DIRECTORY)/portable.mk
-ifneq ($(wildcard $(PORTABLE_MK)),)
-include $(PORTABLE_MK)
-else ifeq ($(strip $(MIX)),)
-$(error mix: no portable resolver at $(PORTABLE_MK) and no MIX set — run `make install-helpers` in the elixir_bots monorepo, or pass MIX=/path/to/mix)
-else
-$(warning no portable resolver at $(PORTABLE_MK) — using MIX=$(MIX) as-is; run `make install-helpers` for portable resolution)
-endif
+# Toolchain locations are machine-specific, so they are resolved per machine by the
+# versioned resolver in the shared scripts dir (scripts/bot-helpers/portable.mk).
+# Do NOT include portable.mk here: bot_army_infra/make/common.mk includes it at the
+# bottom of this file, and a second include warns "overriding commands for target
+# `mix-location'" on every invocation.
 
-.PHONY: setup help deps test test-integration test-full credo dialyzer coverage check format clean release publish-release push-and-publish setup-hooks logs
+.PHONY: setup help deps test test-integration test-full credo dialyzer coverage check format clean release publish-release push-and-publish logs _compile-impl
 
 help:
 	@echo "Voice Capture Bot"
@@ -49,10 +43,6 @@ help:
 setup: deps setup-hooks
 	@echo "Setup complete. Run 'make python-setup' to install MLX Whisper."
 
-setup-hooks:
-	@git config core.hooksPath git-hooks
-	@echo "Git hooks installed (core.hooksPath = git-hooks)"
-
 deps:
 	$(MIX) deps.get
 
@@ -67,6 +57,15 @@ test-full:
 
 credo:
 	$(MIX) credo --min-priority high
+
+# Called by the shared `compile` target (bot_army_infra/make/common.mk), which
+# `make push` depends on. Without it `make push` dies with
+# "No rule to make target '_compile-impl'".
+_compile-impl:
+	@LOG_FILE="/tmp/compile-full-$$(date +%s).log"; \
+	echo "Compiling and logging to $$LOG_FILE..."; \
+	$(MIX) compile 2>&1 | tee "$$LOG_FILE"; \
+	echo "✓ Compilation log: $$LOG_FILE"
 
 dialyzer: deps
 	$(MIX) dialyzer
@@ -134,3 +133,19 @@ push-and-publish:
 
 logs:
 	@$(SCRIPTS_DIRECTORY)/tail_bot_log.sh
+
+
+# ── Shared targets (push, git-push, credo, setup-hooks, compile, pre-push-cleanup,
+# bump-version, sync-hook). Defined once in bot_army_infra so they cannot drift
+# per repo.
+# * bot_army_voice_capture had NO push / git-jush / bump-version target: the standard fleet
+# driver (bump → push → publish → deploy) could not drive it at all.
+#
+# No version bump: build tooling only; the release artifact is unchanged.
+COMMON_MK_SKIP := credo
+BOT_ARMY_COMMON_MK := $(abspath $(CURDIR)/../bot_army_infra/make/common.mk)
+ifeq ($(wildcard $(BOT_ARMY_COMMON_MK)),)
+$(warning bot_army_infra not found at $(BOT_ARMY_COMMON_MK) - shared targets unavailable)
+else
+include $(BOT_ARMY_COMMON_MK)
+endif
