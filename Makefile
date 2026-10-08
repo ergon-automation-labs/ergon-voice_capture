@@ -128,6 +128,7 @@ publish-release: release
 	fi; \
 	echo "Release published to GitHub"
 
+	@$(MAKE) publish-deploy-event TARGET=air
 push-and-publish:
 	@git push && $(MAKE) publish-release
 
