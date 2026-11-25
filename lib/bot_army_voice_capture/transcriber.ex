@@ -183,11 +183,17 @@ defmodule BotArmyVoiceCapture.Transcriber do
       true ->
         args = [script, "--model", model]
 
+        # `{:line, N}` is what the reader below expects. Without it a binary-mode
+        # port delivers `{:data, chunk}` and every `{:eol, line}` clause is skipped,
+        # so the child's `ready` line is dropped on the floor: the transcriber then
+        # reports "Ready timeout" against a Python process that started in one
+        # second, and every request answers `Transcriber not ready: down`.
         port =
           Port.open({:spawn_executable, python}, [
             {:args, args},
             :binary,
-            :exit_status
+            :exit_status,
+            {:line, 1_048_576}
           ])
 
         {:ok, port}
