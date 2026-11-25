@@ -149,41 +149,40 @@ defmodule BotArmyVoiceCapture.NATS.Consumer do
   # Request/reply handlers
   # ============================================================================
 
+  # The fleet envelope carries the request under "payload"; `Decoder.decode/1`
+  # returns the envelope with the payload validated and left in place, so matching
+  # on the top-level map could never succeed. Nothing noticed because no request
+  # had ever been answered — the port was dead. The envelope's `source` is the
+  # default for the payload's, so a caller does not have to repeat itself.
   defp handle_transcribe(msg, state) do
     case BotArmyLibraryCore.NATS.Decoder.decode(msg.body) do
-      {:ok, %{"audio_base64" => b64} = payload} ->
-        _format = Map.get(payload, "format", "pcm")
-        sample_rate = Map.get(payload, "sample_rate", 16_000)
-        source = Map.get(payload, "source", "g2_bridge") |> maybe_to_atom()
+      {:ok, envelope} ->
+        payload =
+          envelope
+          |> Map.get("payload", %{})
+          |> Map.put_new("source", envelope["source"])
 
-        case Base.decode64(b64) do
-          {:ok, pcm_data} ->
-            case Transcriber.transcribe_pcm(pcm_data, sample_rate: sample_rate) do
-              {:ok, result} ->
-                transcription = Transcription.from_whisper_result(result, source)
-                Publisher.publish_transcription(transcription)
-                reply = BotArmyLibraryRuntime.NATS.Reply.ok(Transcription.to_map(transcription))
-                Gnat.pub(state.conn, msg.reply_to, reply)
+        handle_transcribe_payload(payload, msg, state)
 
-              {:error, error} ->
-                reply =
-                  BotArmyLibraryRuntime.NATS.Reply.error(
-                    "Transcription failed: #{inspect(error)}",
-                    :transcription_failed
-                  )
+      {:error, reason} ->
+        reply =
+          BotArmyLibraryRuntime.NATS.Reply.error(
+            "Failed to decode request: #{inspect(reason)}",
+            :decode_error
+          )
 
-                Gnat.pub(state.conn, msg.reply_to, reply)
-            end
+        Gnat.pub(state.conn, msg.reply_to, reply)
+    end
+  end
 
-          :error ->
-            reply = BotArmyLibraryRuntime.NATS.Reply.error("Invalid base64 audio data", :invalid_base64)
-            Gnat.pub(state.conn, msg.reply_to, reply)
-        end
+  defp handle_transcribe_payload(%{"audio_base64" => b64} = payload, msg, state) do
+    _format = Map.get(payload, "format", "pcm")
+    sample_rate = Map.get(payload, "sample_rate", 16_000)
+    source = Map.get(payload, "source", "g2_bridge") |> maybe_to_atom()
 
-      {:ok, %{"audio_path" => path} = payload} ->
-        source = Map.get(payload, "source", "g2_bridge") |> maybe_to_atom()
-
-        case Transcriber.transcribe(path) do
+    case Base.decode64(b64) do
+      {:ok, pcm_data} ->
+        case Transcriber.transcribe_pcm(pcm_data, sample_rate: sample_rate) do
           {:ok, result} ->
             transcription = Transcription.from_whisper_result(result, source)
             Publisher.publish_transcription(transcription)
@@ -200,21 +199,40 @@ defmodule BotArmyVoiceCapture.NATS.Consumer do
             Gnat.pub(state.conn, msg.reply_to, reply)
         end
 
-      {:ok, _} ->
+      :error ->
         reply =
-          BotArmyLibraryRuntime.NATS.Reply.error("Missing audio_base64 or audio_path", :missing_audio)
+          BotArmyLibraryRuntime.NATS.Reply.error("Invalid base64 audio data", :invalid_base64)
 
         Gnat.pub(state.conn, msg.reply_to, reply)
+    end
+  end
 
-      {:error, reason} ->
+  defp handle_transcribe_payload(%{"audio_path" => path} = payload, msg, state) do
+    source = Map.get(payload, "source", "g2_bridge") |> maybe_to_atom()
+
+    case Transcriber.transcribe(path) do
+      {:ok, result} ->
+        transcription = Transcription.from_whisper_result(result, source)
+        Publisher.publish_transcription(transcription)
+        reply = BotArmyLibraryRuntime.NATS.Reply.ok(Transcription.to_map(transcription))
+        Gnat.pub(state.conn, msg.reply_to, reply)
+
+      {:error, error} ->
         reply =
           BotArmyLibraryRuntime.NATS.Reply.error(
-            "Failed to decode request: #{inspect(reason)}",
-            :decode_error
+            "Transcription failed: #{inspect(error)}",
+            :transcription_failed
           )
 
         Gnat.pub(state.conn, msg.reply_to, reply)
     end
+  end
+
+  defp handle_transcribe_payload(_payload, msg, state) do
+    reply =
+      BotArmyLibraryRuntime.NATS.Reply.error("Missing audio_base64 or audio_path", :missing_audio)
+
+    Gnat.pub(state.conn, msg.reply_to, reply)
   end
 
   defp route_message(_message, topic) do
