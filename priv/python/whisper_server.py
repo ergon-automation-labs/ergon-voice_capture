@@ -24,14 +24,45 @@ import tempfile
 import os
 
 MODEL_NAME = os.environ.get("WHISPER_MODEL", "medium.en")
+DEVICE = os.environ.get("WHISPER_DEVICE", "auto")
+COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "")
 _model = None
+
+# Measured on the M4 Pro host with a 2.06 s clip (faster-whisper 1.2.1, medium.en):
+#   cpu/auto (int8_float32) 3.83 s   cpu/int8 3.50 s
+#   cpu/float32             2.43 s   mps/float16 1.54 s
+# `auto` is the slowest of the four because int8 is not faster than Apple's
+# Accelerate float32 path here, and MPS is 2.5x faster than that. So "auto" tries
+# MPS first and falls back to CPU on any host or driver where it cannot run.
+CANDIDATES = {
+    "auto": [("mps", "float16"), ("cpu", "float32"), ("cpu", "auto")],
+}
 
 
 def load_model():
     global _model
     from faster_whisper import WhisperModel
-    _model = WhisperModel(MODEL_NAME, device="cpu", compute_type="auto")
-    return MODEL_NAME
+
+    candidates = CANDIDATES.get(
+        DEVICE, [(DEVICE, COMPUTE_TYPE or "default")]
+    )
+
+    errors = []
+    for device, compute_type in candidates:
+        try:
+            _model = WhisperModel(MODEL_NAME, device=device, compute_type=compute_type)
+            # stderr, never stdout: stdout is the JSON protocol.
+            print(
+                f"[whisper_server] model={MODEL_NAME} device={device} compute_type={compute_type}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return MODEL_NAME
+        except Exception as e:  # noqa: BLE001 - any backend failure means "try the next one"
+            errors.append(f"{device}/{compute_type}: {type(e).__name__}: {e}")
+            print(f"[whisper_server] {errors[-1]}", file=sys.stderr, flush=True)
+
+    raise RuntimeError("no usable Whisper backend: " + "; ".join(errors))
 
 
 def decode_wav(audio_path):
