@@ -34,12 +34,49 @@ def load_model():
     return MODEL_NAME
 
 
+def decode_wav(audio_path):
+    """Read a PCM WAV into the float32 mono array faster-whisper wants.
+
+    Handed a path, faster-whisper decodes through PyAV, and PyAV 19 dropped the
+    `metadata_errors` argument its `decode_audio` still passes — so every file
+    transcription raised `TypeError` before a single sample was read. A numpy array
+    skips that path entirely: `wave` is stdlib, and the only conversion is to mono
+    16 kHz, which is all Whisper accepts anyway.
+    """
+    import wave
+    import numpy as np
+
+    with wave.open(audio_path, "rb") as wav:
+        channels = wav.getnchannels()
+        width = wav.getsampwidth()
+        rate = wav.getframerate()
+        frames = wav.readframes(wav.getnframes())
+
+    if width != 2:
+        raise ValueError(f"expected 16-bit PCM, got {width * 8}-bit")
+
+    samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+
+    if channels > 1:
+        samples = samples.reshape(-1, channels).mean(axis=1)
+
+    if rate != 16000:
+        # Linear resample: correct for a probe, and the device records 16 kHz.
+        n = int(round(len(samples) * 16000 / rate))
+        if n > 0:
+            xp = np.linspace(0.0, len(samples) - 1, num=len(samples))
+            x = np.linspace(0.0, len(samples) - 1, num=n)
+            samples = np.interp(x, xp, samples).astype(np.float32)
+
+    return samples
+
+
 def transcribe_file(audio_path):
     """Transcribe a WAV file on disk."""
     result = _model.transcribe(
-        audio_path,
+        decode_wav(audio_path),
         language="en",
-        word_level_timestamps=True,
+        word_timestamps=True,
     )
     return format_result(result, audio_path=audio_path)
 
@@ -47,11 +84,9 @@ def transcribe_file(audio_path):
 def transcribe_pcm(pcm_data, sample_rate):
     """Transcribe raw PCM s16le mono audio data.
 
-    Wraps PCM in a WAV header in-memory, writes to temp file,
-    runs inference, cleans up.
+    The array goes straight to the model — no temp WAV, no PyAV, no soundfile.
     """
     import numpy as np
-    import soundfile as sf
 
     # Decode base64 if string, otherwise assume bytes
     if isinstance(pcm_data, str):
@@ -59,22 +94,34 @@ def transcribe_pcm(pcm_data, sample_rate):
     else:
         raw_bytes = pcm_data
 
-    # Convert raw PCM s16le bytes to numpy float array
-    audio_array = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+    samples = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32) / 32768.0
 
-    # Write to temp WAV file
-    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-    try:
-        sf.write(tmp.name, audio_array, sample_rate)
-        tmp.close()
-        result = transcribe_file(tmp.name)
-    finally:
-        try:
-            os.unlink(tmp.name)
-        except OSError:
-            pass
+    result = _model.transcribe(
+        samples,
+        language="en",
+        word_timestamps=True,
+    )
+    return format_result(result, audio_path=None)
 
-    return result
+
+def segment_confidence(seg):
+    """A segment's confidence, from whichever field this faster-whisper exposes.
+
+    `Segment.confidence` existed in one version and not another; `avg_logprob` has
+    been there throughout, and `exp(avg_logprob)` is the per-segment probability it
+    stands for. Missing both is 0.0 — a confidence this code does not know is not a
+    confidence of 1.0.
+    """
+    import math
+
+    if hasattr(seg, "confidence"):
+        return seg.confidence
+
+    logprob = getattr(seg, "avg_logprob", None)
+    if logprob is None:
+        return 0.0
+
+    return max(0.0, min(1.0, math.exp(logprob)))
 
 
 def format_result(result, audio_path=None):
@@ -87,6 +134,10 @@ def format_result(result, audio_path=None):
     if isinstance(result, tuple):
         # Faster-whisper returns generator and info
         transcript_segments, info = result
+        # Materialise once: faster-whisper hands back a generator, and reading it for
+        # the text above leaves nothing for the segment loop — which is how `confidence`
+        # sat at 0.0 and `duration_ms` at 0 for every real transcription.
+        transcript_segments = list(transcript_segments)
         text = " ".join(seg.text for seg in transcript_segments).strip()
         language = info.language
 
@@ -95,7 +146,7 @@ def format_result(result, audio_path=None):
                 "start_ms": int(seg.start * 1000),
                 "end_ms": int(seg.end * 1000),
                 "text": seg.text.strip(),
-                "confidence": seg.confidence,
+                "confidence": segment_confidence(seg),
             })
     else:
         # Fallback for unexpected format
